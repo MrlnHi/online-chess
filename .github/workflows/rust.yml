@@ -21,4 +21,4 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
     - name: Run clippy
-      run: cargo clippy --workspace --no-deps --verbose -Dwarnings
+      run: cargo clippy --workspace --no-deps --verbose --Dwarnings
