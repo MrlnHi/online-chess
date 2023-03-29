@@ -1,0 +1,80 @@
+body {
+    background-color: darkblue;
+}
+
+.board {
+    width: 600px !important;
+    height: 600px !important;
+    background-image: url('https://www.chess.com/boards/green/150.png');
+    background-repeat: no-repeat;
+    background-size: 100%;
+    position: relative;
+    user-select: none;
+}
+
+.piece {
+    background-size: 100%;
+    cursor: pointer;
+    cursor: grab;
+    width: 12.5%;
+    height: 12.5%;
+    overflow: hidden;
+    touch-action: none;
+    will-change: transform;
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+.piece.dragging {
+    z-index: 2;
+    cursor: grabbing;
+}
+
+.piece.wr {
+    background-image: url('https://www.chess.com/chess-themes/pieces/neo/150/wr.png');
+}
+
+.piece.wn {
+    background-image: url('https://www.chess.com/chess-themes/pieces/neo/150/wn.png');
+}
+
+.piece.wb {
+    background-image: url('https://www.chess.com/chess-themes/pieces/neo/150/wb.png');
+}
+
+.piece.wk {
+    background-image: url('https://www.chess.com/chess-themes/pieces/neo/150/wk.png');
+}
+
+.piece.wq {
+    background-image: url('https://www.chess.com/chess-themes/pieces/neo/150/wq.png');
+}
+
+.piece.wp {
+    background-image: url('https://www.chess.com/chess-themes/pieces/neo/150/wp.png');
+}
+
+.piece.br {
+    background-image: url('https://www.chess.com/chess-themes/pieces/neo/150/br.png');
+}
+
+.piece.bn {
+    background-image: url('https://www.chess.com/chess-themes/pieces/neo/150/bn.png');
+}
+
+.piece.bb {
+    background-image: url('https://www.chess.com/chess-themes/pieces/neo/150/bb.png');
+}
+
+.piece.bk {
+    background-image: url('https://www.chess.com/chess-themes/pieces/neo/150/bk.png');
+}
+
+.piece.bq {
+    background-image: url('https://www.chess.com/chess-themes/pieces/neo/150/bq.png');
+}
+
+.piece.bp {
+    background-image: url('https://www.chess.com/chess-themes/pieces/neo/150/bp.png');
+}

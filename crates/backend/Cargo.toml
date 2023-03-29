@@ -1,0 +1,16 @@
+[package]
+name = "backend"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+axum = "0.6.12"
+chess = "3.2.0"
+common = { version = "0.1.0", path = "../common" }
+log = "0.4.17"
+rand = "0.8.5"
+tokio = { version = "1.26.0", features = ["macros", "rt-multi-thread"] }
+tower-http = { version = "0.4.0", features = ["fs"] }
+uuid = { version = "1.3.0", features = ["v4"] }
