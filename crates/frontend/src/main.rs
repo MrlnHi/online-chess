@@ -1,18 +1,30 @@
 use common::{HostResponse, JoinResponse, Session};
 use uuid::Uuid;
 use yew::prelude::*;
+use yew_router::prelude::*;
 
-use crate::component::{game::Game, menu::Menu};
+use crate::components::{ingame::Ingame, menu::Menu};
 
-mod component;
+mod components;
+
+#[derive(Routable, PartialEq, Clone, Copy, Debug)]
+enum Route {
+    #[at("/")]
+    Home,
+    #[at("/game/:id")]
+    Ingame { id: Uuid },
+    #[at("/not-found")]
+    #[not_found]
+    NotFound,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Lobby {
+pub struct Game {
     pub id: Uuid,
     pub session: Session,
 }
 
-impl From<HostResponse> for Lobby {
+impl From<HostResponse> for Game {
     fn from(value: HostResponse) -> Self {
         Self {
             id: value.lobby_id,
@@ -21,7 +33,7 @@ impl From<HostResponse> for Lobby {
     }
 }
 
-impl From<JoinResponse> for Lobby {
+impl From<JoinResponse> for Game {
     fn from(value: JoinResponse) -> Self {
         Self {
             id: value.lobby_id,
@@ -30,21 +42,20 @@ impl From<JoinResponse> for Lobby {
     }
 }
 
+fn switch(route: Route) -> Html {
+    match route {
+        Route::Home => html! { <Menu /> },
+        Route::Ingame { id } => html! { <Ingame {id} /> },
+        Route::NotFound => html! { "Not Found." },
+    }
+}
+
 #[function_component]
 fn App() -> Html {
-    let lobby = use_state(|| None);
-    let on_game_start = {
-        let game = lobby.clone();
-        move |game_start| {
-            game.set(Some(game_start));
-        }
-    };
     html! {
-        if let Some(lobby) = *lobby {
-            <Game {lobby}/>
-        } else {
-            <Menu {on_game_start}/>
-        }
+        <BrowserRouter>
+            <Switch<Route> render={switch} />
+        </BrowserRouter>
     }
 }
 

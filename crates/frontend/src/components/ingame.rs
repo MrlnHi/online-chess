@@ -1,15 +1,14 @@
+use uuid::Uuid;
 use yew::{function_component, html, Html, Properties};
-
-use crate::Lobby;
 
 #[derive(Properties, PartialEq)]
 pub struct Props {
-    pub lobby: Lobby,
+    pub id: Uuid,
 }
 
 #[function_component]
-pub fn Game(props: &Props) -> Html {
+pub fn Ingame(props: &Props) -> Html {
     html! {
-        <p>{format!("{:?}", props.lobby)}</p>
+        <p>{format!("Ingame I guess ({})", props.id)}</p>
     }
 }
