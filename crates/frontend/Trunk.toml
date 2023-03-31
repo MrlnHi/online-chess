@@ -1,2 +1,7 @@
 [[proxy]]
 backend = "http://127.0.0.1:3000/api/"
+
+# Does not work as of now
+[[proxy]]
+backend = "ws://127.0.0.1:3000/ws/"
+ws = true

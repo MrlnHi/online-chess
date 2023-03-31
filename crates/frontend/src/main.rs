@@ -1,4 +1,4 @@
-use common::{HostResponse, JoinResponse, Session};
+use common::http::{HostResponse, JoinResponse};
 use uuid::Uuid;
 use yew::prelude::*;
 use yew_router::prelude::*;
@@ -11,8 +11,9 @@ mod components;
 enum Route {
     #[at("/")]
     Home,
-    #[at("/game/:id")]
-    Ingame { id: Uuid },
+    // TODO: Do not include session in url
+    #[at("/game/:id/:session")]
+    Ingame { id: Uuid, session: Uuid },
     #[at("/not-found")]
     #[not_found]
     NotFound,
@@ -21,7 +22,7 @@ enum Route {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Game {
     pub id: Uuid,
-    pub session: Session,
+    pub session: Uuid,
 }
 
 impl From<HostResponse> for Game {
@@ -45,7 +46,7 @@ impl From<JoinResponse> for Game {
 fn switch(route: Route) -> Html {
     match route {
         Route::Home => html! { <Menu /> },
-        Route::Ingame { id } => html! { <Ingame {id} /> },
+        Route::Ingame { id, session } => html! { <Ingame {id} {session} /> },
         Route::NotFound => html! { "Not Found." },
     }
 }

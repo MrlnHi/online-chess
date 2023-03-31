@@ -1,4 +1,4 @@
-use common::HostResponse;
+use common::http::HostResponse;
 use reqwasm::http::Request;
 use web_sys::HtmlInputElement;
 use yew::{platform::spawn_local, prelude::*};
@@ -44,6 +44,7 @@ impl Component for Menu {
                             let response: HostResponse = response.json().await.unwrap();
                             link.navigator().unwrap().push(&Route::Ingame {
                                 id: response.lobby_id,
+                                session: response.session,
                             });
                         }
                         other => {
@@ -72,6 +73,7 @@ impl Component for Menu {
                             let response: HostResponse = response.json().await.unwrap();
                             link.navigator().unwrap().push(&Route::Ingame {
                                 id: response.lobby_id,
+                                session: response.session,
                             });
                         }
                         404 => link.send_message(Msg::Error("Unknown lobby".to_string())),
