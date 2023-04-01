@@ -4,12 +4,12 @@ use axum::{
     response::IntoResponse,
     routing, Json, Router,
 };
-use chess::{Board, Game};
+use chess::{Board, Color, Game};
 use common::{
     http::{HostResponse, JoinResponse},
     ws::{ClientMsg, ServerMsg},
 };
-use futures::lock::Mutex;
+use futures::{lock::Mutex, SinkExt, StreamExt};
 use log::debug;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::broadcast;
@@ -18,25 +18,41 @@ use uuid::Uuid;
 
 struct AppState {
     lobbies: HashMap<Uuid, Lobby>,
-    tx: broadcast::Sender<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct Sessions {
     white: Uuid,
     black: Uuid,
 }
 
-enum Lobby {
-    Waiting(Uuid),
+impl Sessions {
+    fn find(&self, session: Uuid) -> Option<Color> {
+        if self.white == session {
+            Some(Color::White)
+        } else if self.black == session {
+            Some(Color::Black)
+        } else {
+            None
+        }
+    }
+}
+
+struct Lobby {
+    tx: broadcast::Sender<ServerMsg>,
+    players: Players,
+}
+
+#[derive(Debug, Clone)]
+enum Players {
+    Waiting { session: Uuid, color: Color },
     Playing { game: Game, sessions: Sessions },
 }
 
 #[tokio::main]
 async fn main() {
-    let (tx, _rx) = broadcast::channel(100);
     let state = Arc::new(Mutex::new(AppState {
         lobbies: HashMap::new(),
-        tx,
     }));
 
     let app = Router::new()
@@ -62,9 +78,6 @@ async fn websocket_handler(
 // connected client / user, for which we will spawn two independent tasks (for
 // receiving / sending chat messages).
 async fn websocket(mut socket: WebSocket, state: Arc<Mutex<AppState>>) {
-    // By splitting, we can send and receive at the same time.
-    // let (mut sender, mut receiver) = socket.split();
-
     let (lobby_id, session) = if let Some(msg) = socket.recv().await {
         match msg {
             Ok(msg) => {
@@ -93,45 +106,81 @@ async fn websocket(mut socket: WebSocket, state: Arc<Mutex<AppState>>) {
         return;
     };
 
-    match state.lock().await.lobbies.get(&lobby_id) {
-        Some(Lobby::Waiting(sess)) => {
-            if *sess == session {
-                let _ = socket
-                    .send(ServerMsg::Board(Board::default().to_string()).into())
-                    .await;
-            } else {
-                let _ = socket.send(ServerMsg::InvalidSession.into()).await;
+    let tx = match state.lock().await.lobbies.get(&lobby_id) {
+        Some(Lobby { players, tx }) => {
+            match players {
+                Players::Waiting {
+                    session: sess,
+                    color,
+                } => {
+                    if *sess == session {
+                        let _ = socket
+                            .send(
+                                ServerMsg::PlayResponse {
+                                    fen: Board::default().to_string(),
+                                    color: (*color).into(),
+                                }
+                                .into(),
+                            )
+                            .await;
+                    } else {
+                        let _ = socket.send(ServerMsg::InvalidSession.into()).await;
+                    }
+                }
+                Players::Playing { game, sessions } => {
+                    if let Some(color) = sessions.find(session) {
+                        let _ = socket
+                            .send(
+                                ServerMsg::PlayResponse {
+                                    fen: game.current_position().to_string(),
+                                    color: color.into(),
+                                }
+                                .into(),
+                            )
+                            .await;
+                    } else {
+                        let _ = socket.send(ServerMsg::InvalidSession.into()).await;
+                    }
+                }
             }
+            tx.clone()
         }
-        Some(Lobby::Playing { .. }) => {}
         None => {
             let _ = socket.send(ServerMsg::InvalidLobby.into()).await;
             return;
         }
-    }
+    };
 
-    // We subscribe *before* sending the "joined" message, so that we will also
-    // display it to our client.
-    let mut rx = state.lock().await.tx.subscribe();
+    let mut rx = tx.subscribe();
+
+    // By splitting, we can send and receive at the same time.
+    let (mut sender, mut receiver) = socket.split();
 
     // Spawn the first task that will receive broadcast messages and send text
     // messages over the websocket to our client.
     let mut send_task = tokio::spawn(async move {
-        while let Ok(_msg) = rx.recv().await {
+        while let Ok(msg) = rx.recv().await {
             // In any websocket error, break loop.
-            // if sender.send(Message::Text(msg)).await.is_err() {
-            //     break;
-            // }
+            if sender.send(msg.into()).await.is_err() {
+                break;
+            }
         }
     });
 
-    let _tx = state.lock().await.tx.clone();
-
     let mut recv_task = tokio::spawn(async move {
-        // while let Some(Ok(Message::Text(text))) = receiver.next().await {
-        // Add username before message.
-        // let _ = tx.send(format!("{}: {}", name, text));
-        // }
+        while let Some(Ok(msg)) = receiver.next().await {
+            let msg = ClientMsg::try_from(msg);
+            match msg {
+                Ok(msg) => {
+                    debug!("received {msg:?} from client");
+                }
+                Err(err) => {
+                    debug!("error deserializing client message: {err}");
+                    // client is clearly drunk, disconnect
+                    break;
+                }
+            }
+        }
     });
 
     // If any one of the tasks run to completion, we abort the other.
@@ -148,11 +197,21 @@ async fn host_game(
 ) -> Result<Json<HostResponse>, StatusCode> {
     let lobby_code = Uuid::new_v4();
     let session = Uuid::new_v4();
-    state
-        .lock()
-        .await
-        .lobbies
-        .insert(lobby_code, Lobby::Waiting(session));
+    state.lock().await.lobbies.insert(
+        lobby_code,
+        Lobby {
+            // TODO: Increase capacity when introducing spectators
+            tx: broadcast::channel(2).0,
+            players: Players::Waiting {
+                session,
+                color: if rand::random() {
+                    Color::White
+                } else {
+                    Color::Black
+                },
+            },
+        },
+    );
 
     Ok(Json(HostResponse {
         lobby_id: lobby_code,
@@ -165,16 +224,28 @@ async fn join_game(
     State(state): State<Arc<Mutex<AppState>>>,
 ) -> Result<Json<JoinResponse>, StatusCode> {
     match state.lock().await.lobbies.get_mut(&id) {
-        Some(lobby) => match *lobby {
-            Lobby::Waiting(white) => {
-                let black = Uuid::new_v4();
-                *lobby = Lobby::Playing {
+        Some(lobby) => match lobby.players {
+            Players::Waiting { session, color } => {
+                let other = Uuid::new_v4();
+                let sessions = if color == Color::White {
+                    Sessions {
+                        white: session,
+                        black: other,
+                    }
+                } else {
+                    Sessions {
+                        white: other,
+                        black: session,
+                    }
+                };
+                let _ = lobby.tx.send(ServerMsg::OpponentJoined);
+                lobby.players = Players::Playing {
                     game: Game::new(),
-                    sessions: Sessions { white, black },
+                    sessions,
                 };
                 Ok(Json(JoinResponse {
                     lobby_id: id,
-                    session: black,
+                    session: other,
                 }))
             }
             _ => Err(StatusCode::CONFLICT),
