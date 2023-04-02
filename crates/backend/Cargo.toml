@@ -12,5 +12,6 @@ common = { version = "0.1.0", path = "../common", features = ["axum"] }
 futures = "0.3.28"
 log = "0.4.17"
 rand = "0.8.5"
+simple_logger = "4.1.0"
 tokio = { version = "1.26.0", features = ["macros", "rt-multi-thread"] }
 uuid = { version = "1.3.0", features = ["v4"] }

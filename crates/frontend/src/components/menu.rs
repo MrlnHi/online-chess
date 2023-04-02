@@ -8,13 +8,12 @@ use crate::Route;
 
 #[derive(Debug, Default)]
 pub struct Menu {
-    input: String,
+    input_ref: NodeRef,
     output: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Msg {
-    OnInput(String),
     Error(String),
 }
 
@@ -55,10 +54,11 @@ impl Component for Menu {
             }
         };
         let join = {
-            let input = self.input.clone();
+            let input_ref = self.input_ref.clone();
             let link = ctx.link().clone();
             move |_| {
-                let input = input.clone();
+                let input: HtmlInputElement = input_ref.cast().unwrap();
+                let input = input.value();
                 let link = link.clone();
                 spawn_local(async move {
                     let response = match Request::post(&format!("/api/join/{input}")).send().await {
@@ -85,16 +85,12 @@ impl Component for Menu {
                 })
             }
         };
-        let onchange = ctx.link().callback(|e: Event| {
-            let input: HtmlInputElement = e.target_unchecked_into();
-            Msg::OnInput(input.value())
-        });
 
         html! {
             <div>
                 <button onclick={host}>{"Host Game"}</button>
                 <div>
-                    <input placeholder={"Lobby ID"} {onchange}/>
+                    <input placeholder={"Lobby ID"} ref={&self.input_ref}/>
                     <button onclick={join}>{"Join Game"}</button>
                 </div>
                 <p>{&self.output}</p>
@@ -104,9 +100,6 @@ impl Component for Menu {
 
     fn update(&mut self, _ctx: &Context<Self>, msg: Msg) -> bool {
         match msg {
-            Msg::OnInput(input) => {
-                self.input = input;
-            }
             Msg::Error(err) => {
                 self.output = err;
             }
