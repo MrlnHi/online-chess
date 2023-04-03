@@ -264,7 +264,7 @@ async fn websocket(mut socket: WebSocket, state: Arc<AppState>) {
             }
         })
     };
-    info!("Hi");
+    info!("user joined");
 
     // If any one of the tasks run to completion, we abort the other.
     tokio::select! {

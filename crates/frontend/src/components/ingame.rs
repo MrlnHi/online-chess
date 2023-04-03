@@ -1,5 +1,8 @@
-use super::board::Board;
 use std::str::FromStr;
+
+use crate::Route;
+
+use super::board::Board;
 
 use chess::{Board as ChessBoard, ChessMove, Color};
 use common::ws::{ClientMsg, ServerMsg};
@@ -12,6 +15,7 @@ use reqwasm::websocket::futures::WebSocket;
 use uuid::Uuid;
 use wasm_bindgen_futures::spawn_local;
 use yew::{html, Callback, Component, Html, Properties};
+use yew_router::scope_ext::RouterScopeExt;
 
 #[derive(Properties, PartialEq)]
 pub struct Props {
@@ -30,9 +34,7 @@ pub struct Ingame {
 }
 
 pub enum Msg {
-    Initialize(Game),
     ReceivedMsg(ServerMsg),
-    Error,
 }
 
 impl Component for Ingame {
@@ -51,7 +53,7 @@ impl Component for Ingame {
             let session = ctx.props().session;
 
             let link = ctx.link().clone();
-            ctx.link().send_future(async move {
+            spawn_local(async move {
                 send.send(
                     ClientMsg::PlayRequest {
                         lobby_id: id,
@@ -62,57 +64,28 @@ impl Component for Ingame {
                 .await
                 .unwrap();
                 info!("sent PlayRequest");
-                match receive.next().await {
-                    Some(Ok(msg)) => {
-                        match msg.try_into() {
-                            Ok(ServerMsg::PlayResponse { fen, color }) => {
-                                spawn_local(async move {
-                                    while let Some(msg) = receive.next().await {
-                                        match msg {
-                                            Ok(msg) => match msg.try_into() {
-                                                Ok(msg) => {
-                                                    link.send_message(Msg::ReceivedMsg(msg));
-                                                }
-                                                Err(err) => {
-                                                    info!("error deserializing message: {err}");
-                                                }
-                                            },
-                                            Err(err) => {
-                                                info!("error receiving message: {err}");
-                                            }
-                                        }
-                                    }
-                                });
-                                spawn_local(async move {
-                                    while let Some(msg) = rx.next().await {
-                                        send.send(msg.into()).await.unwrap();
-                                    }
-                                });
-                                Msg::Initialize(Game {
-                                    // TODO: Error handling
-                                    board: ChessBoard::from_str(&fen).unwrap(),
-                                    color: color.into(),
-                                })
-                            }
-                            Ok(msg) => {
-                                info!("server responded to play request with {msg:?}");
-                                Msg::Error
-                            }
+                spawn_local(async move {
+                    while let Some(msg) = receive.next().await {
+                        match msg {
+                            Ok(msg) => match msg.try_into() {
+                                Ok(msg) => {
+                                    link.send_message(Msg::ReceivedMsg(msg));
+                                }
+                                Err(err) => {
+                                    info!("error deserializing message: {err}");
+                                }
+                            },
                             Err(err) => {
-                                info!("error reading server message: {err}");
-                                Msg::Error
+                                info!("error receiving message: {err}");
                             }
                         }
                     }
-                    Some(Err(err)) => {
-                        info!("err: {err}");
-                        Msg::Error
+                });
+                spawn_local(async move {
+                    while let Some(msg) = rx.next().await {
+                        send.send(msg.into()).await.unwrap();
                     }
-                    None => {
-                        info!("received no message");
-                        Msg::Error
-                    }
-                }
+                });
             });
         }
 
@@ -142,18 +115,25 @@ impl Component for Ingame {
         }
     }
 
-    fn update(&mut self, _ctx: &yew::Context<Self>, msg: Self::Message) -> bool {
+    fn update(&mut self, ctx: &yew::Context<Self>, msg: Self::Message) -> bool {
         match msg {
-            Msg::Initialize(game) => {
-                self.game.replace(game);
-                true
-            }
             Msg::ReceivedMsg(msg) => match msg {
+                ServerMsg::PlayResponse { fen, color } => {
+                    self.game.replace(Game {
+                        board: ChessBoard::from_str(&fen).unwrap(),
+                        color: color.into(),
+                    });
+                    true
+                }
                 ServerMsg::InvalidSession => {
-                    todo!();
+                    info!("received invalid session, going back to home");
+                    ctx.link().navigator().unwrap().replace(&Route::Home);
+                    true
                 }
                 ServerMsg::InvalidLobby => {
-                    todo!();
+                    info!("received invalid lobby, going back to home");
+                    ctx.link().navigator().unwrap().replace(&Route::Home);
+                    true
                 }
                 ServerMsg::OpponentJoined => {
                     info!("opponent joined");
@@ -173,7 +153,6 @@ impl Component for Ingame {
                     false
                 }
             },
-            Msg::Error => false,
         }
     }
 }
