@@ -65,7 +65,7 @@ impl TryFrom<Piece> for chess::Piece {
             "b" => Ok(chess::Piece::Bishop),
             "r" => Ok(chess::Piece::Rook),
             "q" => Ok(chess::Piece::Queen),
-            "k" => Ok(chess::Piece::Knight),
+            "k" => Ok(chess::Piece::King),
             _ => Err(InvalidPieceError(value.0)),
         }
     }

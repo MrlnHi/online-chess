@@ -67,7 +67,7 @@ impl Component for Board {
                             }
                         }
                         _ => info!("invalid data-square value '{data}'"),
-                    }
+                    };
                 }
             })
         };

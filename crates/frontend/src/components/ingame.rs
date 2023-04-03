@@ -102,7 +102,7 @@ impl Component for Ingame {
                         tx.send(ClientMsg::PlayMove(chess_move.into()))
                             .await
                             .unwrap();
-                    })
+                    });
                 })
             };
             html! {

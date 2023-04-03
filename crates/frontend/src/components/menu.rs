@@ -47,10 +47,10 @@ impl Component for Menu {
                             });
                         }
                         other => {
-                            link.send_message(Msg::Error(format!("Unhandled status code {other}")))
+                            link.send_message(Msg::Error(format!("Unhandled status code {other}")));
                         }
                     }
-                })
+                });
             }
         };
         let join = {
@@ -79,10 +79,10 @@ impl Component for Menu {
                         404 => link.send_message(Msg::Error("Unknown lobby".to_string())),
                         409 => link.send_message(Msg::Error("Game is already running".to_string())),
                         other => {
-                            link.send_message(Msg::Error(format!("Unhandled status code {other}")))
+                            link.send_message(Msg::Error(format!("Unhandled status code {other}")));
                         }
                     }
-                })
+                });
             }
         };
 

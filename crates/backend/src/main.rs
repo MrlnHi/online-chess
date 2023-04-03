@@ -148,7 +148,7 @@ async fn websocket(mut socket: WebSocket, state: Arc<AppState>) {
                 match msg {
                     ClientMsg::PlayRequest { lobby_id, session } => (lobby_id, session),
                     _ => {
-                        let _ = socket.send(ServerMsg::PlayRequestRequired.into()).await;
+                        _ = socket.send(ServerMsg::PlayRequestRequired.into()).await;
                         return;
                     }
                 }
@@ -171,7 +171,7 @@ async fn websocket(mut socket: WebSocket, state: Arc<AppState>) {
                     color,
                 } => {
                     if *sess == session {
-                        let _ = socket
+                        _ = socket
                             .send(
                                 ServerMsg::PlayResponse {
                                     fen: Board::default().to_string(),
@@ -182,13 +182,13 @@ async fn websocket(mut socket: WebSocket, state: Arc<AppState>) {
                             .await;
                         *color
                     } else {
-                        let _ = socket.send(ServerMsg::InvalidSession.into()).await;
+                        _ = socket.send(ServerMsg::InvalidSession.into()).await;
                         return;
                     }
                 }
                 LobbyState::Playing { game, sessions } => {
                     if let Some(color) = sessions.find(session) {
-                        let _ = socket
+                        _ = socket
                             .send(
                                 ServerMsg::PlayResponse {
                                     fen: game.current_position().to_string(),
@@ -199,7 +199,7 @@ async fn websocket(mut socket: WebSocket, state: Arc<AppState>) {
                             .await;
                         color
                     } else {
-                        let _ = socket.send(ServerMsg::InvalidSession.into()).await;
+                        _ = socket.send(ServerMsg::InvalidSession.into()).await;
                         return;
                     }
                 }
@@ -207,7 +207,7 @@ async fn websocket(mut socket: WebSocket, state: Arc<AppState>) {
             (tx.clone(), color)
         }
         None => {
-            let _ = socket.send(ServerMsg::InvalidLobby.into()).await;
+            _ = socket.send(ServerMsg::InvalidLobby.into()).await;
             return;
         }
     };
@@ -320,7 +320,7 @@ async fn join_game(
                         black: session,
                     }
                 };
-                let _ = lobby.tx.send(ServerMsg::OpponentJoined);
+                _ = lobby.tx.send(ServerMsg::OpponentJoined);
                 lobby.state = LobbyState::Playing {
                     game: Game::new(),
                     sessions,
@@ -330,7 +330,7 @@ async fn join_game(
                     session: other,
                 }))
             }
-            _ => Err(StatusCode::CONFLICT),
+            LobbyState::Playing { .. } => Err(StatusCode::CONFLICT),
         },
         None => Err(StatusCode::NOT_FOUND),
     }
