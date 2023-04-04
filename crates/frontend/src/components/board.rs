@@ -17,7 +17,8 @@ pub struct Board {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Msg {
-    SelectSquare(Square),
+    ClickPiece(Square),
+    ClickSquare(Square),
 }
 
 impl Component for Board {
@@ -31,48 +32,82 @@ impl Component for Board {
     fn view(&self, ctx: &Context<Self>) -> Html {
         let props = ctx.props();
 
-        let squares: Html = (0..8)
+        let squares: Html = {
+            let click_square = {
+                let link = ctx.link().clone();
+                Callback::from(move |e: MouseEvent| {
+                    info!("click square");
+                    let link = link.clone();
+                    let element: HtmlElement = e.target_unchecked_into();
+                    if let Some(data) = element.get_attribute("data-square") {
+                        let chars: Vec<_> = data.chars().collect();
+                        match chars[..] {
+                            [rank, file] => {
+                                let rank = rank.to_digit(10);
+                                let file = file.to_digit(10);
+                                match rank.zip(file) {
+                                    Some((rank, file)) => {
+                                        let square = Square::make_square(
+                                            Rank::from_index(rank as usize),
+                                            File::from_index(file as usize),
+                                        );
+                                        link.send_message(Msg::ClickSquare(square));
+                                    }
+                                    None => {
+                                        info!("invalid data-square value '{data}'");
+                                    }
+                                }
+                            }
+                            _ => info!("invalid data-square value '{data}'"),
+                        };
+                    }
+                })
+            };
+            let click_square = &click_square;
+            (0..8)
             .flat_map(|rank| {
                 (0..8).map(move |file| {
                     html! {
                         <div style={format!("background-color: {}; position: absolute; bottom: {}%; left: {}%; background-size: 100%; height: 12.5%; width: 12.5%;", if (file + rank) % 2 == 0 {"black"} else {"white"}, 12.5 * rank as f32, 12.5 * file as f32)}
-                        data-square={format!("{rank}{file}")}/>
+                        data-square={format!("{rank}{file}")}
+                        onclick={click_square.clone()}/>
                     }
                 })
             })
-            .collect();
-
-        let click = {
-            let link = ctx.link().clone();
-            Callback::from(move |e: MouseEvent| {
-                let link = link.clone();
-                let element: HtmlElement = e.target_unchecked_into();
-                if let Some(data) = element.get_attribute("data-square") {
-                    let chars: Vec<_> = data.chars().collect();
-                    match chars[..] {
-                        [rank, file] => {
-                            let rank = rank.to_digit(10);
-                            let file = file.to_digit(10);
-                            match rank.zip(file) {
-                                Some((rank, file)) => {
-                                    let square = Square::make_square(
-                                        Rank::from_index(rank as usize),
-                                        File::from_index(file as usize),
-                                    );
-                                    link.send_message(Msg::SelectSquare(square));
-                                }
-                                None => {
-                                    info!("invalid data-square value '{data}'");
-                                }
-                            }
-                        }
-                        _ => info!("invalid data-square value '{data}'"),
-                    };
-                }
-            })
+            .collect()
         };
 
-        let pieces: Html = (0..8)
+        let pieces: Html = {
+            let click_piece = {
+                let link = ctx.link().clone();
+                Callback::from(move |e: MouseEvent| {
+                    let link = link.clone();
+                    let element: HtmlElement = e.target_unchecked_into();
+                    if let Some(data) = element.get_attribute("data-square") {
+                        let chars: Vec<_> = data.chars().collect();
+                        match chars[..] {
+                            [rank, file] => {
+                                let rank = rank.to_digit(10);
+                                let file = file.to_digit(10);
+                                match rank.zip(file) {
+                                    Some((rank, file)) => {
+                                        let square = Square::make_square(
+                                            Rank::from_index(rank as usize),
+                                            File::from_index(file as usize),
+                                        );
+                                        link.send_message(Msg::ClickPiece(square));
+                                    }
+                                    None => {
+                                        info!("invalid data-square value '{data}'");
+                                    }
+                                }
+                            }
+                            _ => info!("invalid data-square value '{data}'"),
+                        };
+                    }
+                })
+            };
+            (0..8)
             .flat_map(|rank| {
                 (0..8)
                     .map(move |file| {
@@ -111,33 +146,51 @@ impl Component for Board {
                         html! {
                             <div style={style}
                             data-square={format!("{}{}", square.get_rank().to_index(), square.get_file().to_index())}
-                            onclick={click.clone()}/>
+                            onclick={click_piece.clone()}/>
                         }
                     })
             })
-            .collect();
+            .collect()
+        };
 
         html! {
             <>
                 <p>{"You are "}{if props.color == Color::White {"White"} else {"Black"}}</p>
                 <div style="width: 600px; height: 600px; position: relative;">
-                    <div style={"position: absolute; top: 0; left: 0; width: 100%; height: 100%;"}>
-                        {squares}
-                    </div>
-                    <div style={"position: absolute; top: 0; left: 0; width: 100%; height: 100%;"}>
-                        {pieces}
-                    </div>
+                    {squares}
+                    {pieces}
                 </div>
             </>
         }
     }
 
-    fn update(&mut self, _ctx: &Context<Self>, msg: Self::Message) -> bool {
+    fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
-            Msg::SelectSquare(square) => {
-                self.selected_square.replace(square);
-                info!("selected {square}");
-                true
+            Msg::ClickPiece(square) => match ctx.props().board.color_on(square) {
+                Some(color) => {
+                    if color == ctx.props().color {
+                        self.selected_square.replace(square);
+                        true
+                    } else {
+                        ctx.link().send_message(Msg::ClickSquare(square));
+                        false
+                    }
+                }
+                None => {
+                    info!("clicked piece that doesn't exist? ignoring..");
+                    false
+                }
+            },
+            Msg::ClickSquare(square) => {
+                if let Some(selected) = self.selected_square.take() {
+                    let chess_move = ChessMove::new(selected, square, None);
+                    if ctx.props().board.legal(chess_move) {
+                        ctx.props().play_move.emit(chess_move);
+                    }
+                    true
+                } else {
+                    false
+                }
             }
         }
     }
