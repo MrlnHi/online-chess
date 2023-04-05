@@ -1,4 +1,4 @@
-use chess::{Board as ChessBoard, ChessMove, Color, File, Piece, Rank, Square};
+use chess::{Board as ChessBoard, ChessMove, Color, File, MoveGen, Piece, Rank, Square};
 use log::info;
 use web_sys::HtmlElement;
 use yew::prelude::*;
@@ -153,12 +153,27 @@ impl Component for Board {
             .collect()
         };
 
+        let moves: Option<Html> = self.selected_square.map(|selected_square| {
+            MoveGen::new_legal(&ctx.props().board)
+                .filter(|chess_move| chess_move.get_source() == selected_square)
+                .map(|chess_move| {
+                    let style = format!("position: absolute; bottom: {}%; left: {}%; height: 12.5%; width: 12.5%; background-color: #bbb; border-radius: 50%; pointer-events: none;",
+                        12.5 * chess_move.get_dest().get_rank().to_index() as f32, 
+                        12.5 * chess_move.get_dest().get_file().to_index() as f32);
+                    html! {
+                        <div style={style}/>
+                    }
+                })
+                .collect()
+        });
+
         html! {
             <>
                 <p>{"You are "}{if props.color == Color::White {"White"} else {"Black"}}</p>
                 <div style="width: 600px; height: 600px; position: relative;">
                     {squares}
                     {pieces}
+                    {moves}
                 </div>
             </>
         }
@@ -167,17 +182,12 @@ impl Component for Board {
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
             Msg::ClickPiece(square) => match ctx.props().board.color_on(square) {
-                Some(color) => {
-                    if color == ctx.props().color {
-                        self.selected_square.replace(square);
-                        true
-                    } else {
-                        ctx.link().send_message(Msg::ClickSquare(square));
-                        false
-                    }
+                Some(color) if color == ctx.props().color => {
+                    self.selected_square.replace(square);
+                    true
                 }
-                None => {
-                    info!("clicked piece that doesn't exist? ignoring..");
+                _ => {
+                    ctx.link().send_message(Msg::ClickSquare(square));
                     false
                 }
             },
