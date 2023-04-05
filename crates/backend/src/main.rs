@@ -2,7 +2,8 @@ use axum::{
     extract::{ws::WebSocket, Path, State, WebSocketUpgrade},
     http::StatusCode,
     response::IntoResponse,
-    routing, Json, Router,
+    routing::{self, get_service},
+    Json, Router,
 };
 use chess::{Board, ChessMove, Color, Game};
 use common::{
@@ -17,6 +18,7 @@ use futures::{
 use log::{debug, info};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::broadcast;
+use tower_http::services::{ServeDir, ServeFile};
 
 use uuid::Uuid;
 
@@ -116,7 +118,13 @@ async fn main() {
         .route("/api/host", routing::post(host_game))
         .route("/api/join/:id", routing::post(join_game))
         .route("/ws", routing::get(websocket_handler))
+        .nest_service(
+            "/",
+            get_service(ServeDir::new("./assets").fallback(ServeFile::new("./assets/index.html"))),
+        )
         .with_state(state);
+
+    info!("starting...");
 
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
         .serve(app.into_make_service())
