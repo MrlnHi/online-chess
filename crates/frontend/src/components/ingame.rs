@@ -1,3 +1,4 @@
+use common::ws::message::Message;
 use std::str::FromStr;
 
 use crate::Route;
@@ -59,7 +60,8 @@ impl Component for Ingame {
                         lobby_id: id,
                         session,
                     }
-                    .into(),
+                    .to_reqwasm_message()
+                    .unwrap(),
                 )
                 .await
                 .unwrap();
@@ -67,7 +69,7 @@ impl Component for Ingame {
                 spawn_local(async move {
                     while let Some(msg) = receive.next().await {
                         match msg {
-                            Ok(msg) => match msg.try_into() {
+                            Ok(msg) => match Message::from_reqwasm_message(msg) {
                                 Ok(msg) => {
                                     link.send_message(Msg::ReceivedMsg(msg));
                                 }
@@ -83,7 +85,7 @@ impl Component for Ingame {
                 });
                 spawn_local(async move {
                     while let Some(msg) = rx.next().await {
-                        send.send(msg.into()).await.unwrap();
+                        send.send(msg.to_reqwasm_message().unwrap()).await.unwrap();
                     }
                 });
             });
@@ -99,9 +101,7 @@ impl Component for Ingame {
                 Callback::from(move |chess_move: ChessMove| {
                     let mut tx = tx.clone();
                     spawn_local(async move {
-                        tx.send(ClientMsg::PlayMove(chess_move.into()))
-                            .await
-                            .unwrap();
+                        tx.send(ClientMsg::PlayMove(chess_move)).await.unwrap();
                     });
                 })
             };
@@ -121,7 +121,7 @@ impl Component for Ingame {
                 ServerMsg::PlayResponse { fen, color } => {
                     self.game.replace(Game {
                         board: ChessBoard::from_str(&fen).unwrap(),
-                        color: color.into(),
+                        color,
                     });
                     true
                 }
@@ -141,8 +141,7 @@ impl Component for Ingame {
                 }
                 ServerMsg::PlayedMove(chess_move) => {
                     if let Some(game) = &mut self.game {
-                        // TODO: Error handling
-                        game.board = game.board.make_move_new(chess_move.try_into().unwrap());
+                        game.board = game.board.make_move_new(chess_move);
                         true
                     } else {
                         false

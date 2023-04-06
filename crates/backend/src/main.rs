@@ -8,14 +8,14 @@ use axum::{
 use chess::{Board, ChessMove, Color, Game};
 use common::{
     http::{HostResponse, JoinResponse},
-    ws::{ClientMsg, ServerMsg},
+    ws::{message::Message, ClientMsg, ServerMsg},
 };
 use futures::{
     channel::mpsc::{channel, Sender},
     lock::Mutex,
     SinkExt, StreamExt,
 };
-use log::{debug, info};
+use log::{debug, error, info, warn};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::broadcast;
 use tower_http::services::{ServeDir, ServeFile};
@@ -91,7 +91,7 @@ async fn main() {
                                     if game.side_to_move() == color {
                                         if game.make_move(chess_move) {
                                             info!("client played move, broadcasting");
-                                            _ = lobby.tx.send(ServerMsg::PlayedMove(chess_move.into()));
+                                            _ = lobby.tx.send(ServerMsg::PlayedMove(chess_move));
                                         } else {
                                             info!("client sent illegal move {chess_move}, ignoring");
                                         }
@@ -146,7 +146,7 @@ async fn websocket(mut socket: WebSocket, state: Arc<AppState>) {
     let (lobby_id, session) = if let Some(msg) = socket.recv().await {
         match msg {
             Ok(msg) => {
-                let msg: ClientMsg = match msg.try_into() {
+                let msg = match Message::from_axum_message(msg) {
                     Ok(msg) => msg,
                     Err(err) => {
                         debug!("error reading client msg: {err}");
@@ -156,7 +156,11 @@ async fn websocket(mut socket: WebSocket, state: Arc<AppState>) {
                 match msg {
                     ClientMsg::PlayRequest { lobby_id, session } => (lobby_id, session),
                     _ => {
-                        _ = socket.send(ServerMsg::PlayRequestRequired.into()).await;
+                        let Ok(msg) = ServerMsg::PlayRequestRequired.to_axum_message() else {
+                            warn!("failed to convert message to axum message: {:?}", ServerMsg::PlayRequestRequired);
+                            return;
+                        };
+                        _ = socket.send(msg).await;
                         return;
                     }
                 }
@@ -183,14 +187,17 @@ async fn websocket(mut socket: WebSocket, state: Arc<AppState>) {
                             .send(
                                 ServerMsg::PlayResponse {
                                     fen: Board::default().to_string(),
-                                    color: (*color).into(),
+                                    color: *color,
                                 }
-                                .into(),
+                                .to_axum_message()
+                                .unwrap(),
                             )
                             .await;
                         *color
                     } else {
-                        _ = socket.send(ServerMsg::InvalidSession.into()).await;
+                        _ = socket
+                            .send(ServerMsg::InvalidSession.to_axum_message().unwrap())
+                            .await;
                         return;
                     }
                 }
@@ -200,14 +207,17 @@ async fn websocket(mut socket: WebSocket, state: Arc<AppState>) {
                             .send(
                                 ServerMsg::PlayResponse {
                                     fen: game.current_position().to_string(),
-                                    color: color.into(),
+                                    color,
                                 }
-                                .into(),
+                                .to_axum_message()
+                                .unwrap(),
                             )
                             .await;
                         color
                     } else {
-                        _ = socket.send(ServerMsg::InvalidSession.into()).await;
+                        _ = socket
+                            .send(ServerMsg::InvalidSession.to_axum_message().unwrap())
+                            .await;
                         return;
                     }
                 }
@@ -215,7 +225,9 @@ async fn websocket(mut socket: WebSocket, state: Arc<AppState>) {
             (tx.clone(), color)
         }
         None => {
-            _ = socket.send(ServerMsg::InvalidLobby.into()).await;
+            _ = socket
+                .send(ServerMsg::InvalidLobby.to_axum_message().unwrap())
+                .await;
             return;
         }
     };
@@ -230,7 +242,14 @@ async fn websocket(mut socket: WebSocket, state: Arc<AppState>) {
     let mut send_task = tokio::spawn(async move {
         while let Ok(msg) = rx.recv().await {
             // In any websocket error, break loop.
-            if sender.send(msg.into()).await.is_err() {
+            let msg = match msg.to_axum_message() {
+                Ok(msg) => msg,
+                Err(err) => {
+                    error!("failed to convert message to axum message: {err:?}");
+                    break;
+                }
+            };
+            if sender.send(msg).await.is_err() {
                 break;
             }
         }
@@ -240,20 +259,13 @@ async fn websocket(mut socket: WebSocket, state: Arc<AppState>) {
         let mut tx = state.tx.clone();
         tokio::spawn(async move {
             while let Some(Ok(msg)) = receiver.next().await {
-                let msg = ClientMsg::try_from(msg);
+                let msg = ClientMsg::from_axum_message(msg);
                 match msg {
                     Ok(msg) => match msg {
                         ClientMsg::PlayRequest { .. } => {
                             info!("client sent PlayRequest while already in game, ignoring");
                         }
                         ClientMsg::PlayMove(chess_move) => {
-                            let chess_move = match chess_move.try_into() {
-                                Ok(chess_move) => chess_move,
-                                Err(err) => {
-                                    info!("error converting chess move: {err}");
-                                    continue;
-                                }
-                            };
                             tx.send(PlayerAction::PlayMove {
                                 lobby_id,
                                 color,

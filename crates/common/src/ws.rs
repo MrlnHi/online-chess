@@ -1,17 +1,10 @@
-use serde::{Deserialize, Serialize};
+use chess::{ChessMove, Color};
+use proc_macros::Message;
 use uuid::Uuid;
 
-use self::new_types::{ChessMove, Color};
+pub mod message;
 
-#[cfg(feature = "axum")]
-pub mod axum;
-
-#[cfg(feature = "reqwasm")]
-pub mod reqwasm;
-
-pub mod new_types;
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Message)]
 pub enum ServerMsg {
     PlayRequestRequired,
     PlayResponse { fen: String, color: Color },
@@ -22,7 +15,7 @@ pub enum ServerMsg {
     InvalidMove,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Message)]
 pub enum ClientMsg {
     PlayRequest { lobby_id: Uuid, session: Uuid },
     PlayMove(ChessMove),
