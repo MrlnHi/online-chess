@@ -132,7 +132,7 @@ pub fn derive_message(input: StdTokenStream) -> StdTokenStream {
                     }
                 })
                 .collect();
-            let invalid_str = format!("invalid {ident} id {{id}}");
+            let invalid_str = format!("invalid {ident} id {{}}");
             quote! {
                 impl message::Message for #ident {
                     fn encode(&self, mut write: impl std::io::Write) -> std::io::Result<()> {
@@ -146,7 +146,7 @@ pub fn derive_message(input: StdTokenStream) -> StdTokenStream {
                         let id = u8::decode(&mut read)?;
                         match id {
                             #decodes
-                            _ => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, format!(#invalid_str))),
+                            _ => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, format!(#invalid_str, id))),
                         }
                     }
                 }
