@@ -1,4 +1,4 @@
-use chess::{Board as ChessBoard, ChessMove, Color, File, MoveGen, Piece, Rank, Square};
+use cozy_chess::{BitBoard, Board as ChessBoard, Color, File, Move, Piece, Rank, Square};
 use log::info;
 use web_sys::HtmlElement;
 use yew::prelude::*;
@@ -7,7 +7,7 @@ use yew::prelude::*;
 pub struct Props {
     pub board: ChessBoard,
     pub color: Color,
-    pub play_move: Callback<ChessMove>,
+    pub play_move: Callback<Move>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -41,24 +41,23 @@ impl Component for Board {
                     let element: HtmlElement = e.target_unchecked_into();
                     if let Some(data) = element.get_attribute("data-square") {
                         let chars: Vec<_> = data.chars().collect();
-                        match chars[..] {
-                            [rank, file] => {
-                                let rank = rank.to_digit(10);
-                                let file = file.to_digit(10);
-                                match rank.zip(file) {
-                                    Some((rank, file)) => {
-                                        let square = Square::make_square(
-                                            Rank::from_index(rank as usize),
-                                            File::from_index(file as usize),
-                                        );
-                                        link.send_message(Msg::ClickSquare(square));
-                                    }
-                                    None => {
-                                        info!("invalid data-square value '{data}'");
-                                    }
+                        if let [file, rank] = chars[..] {
+                            let file = file.to_digit(10);
+                            let rank = rank.to_digit(10);
+                            match file.zip(rank) {
+                                Some((file, rank)) => {
+                                    let square = Square::new(
+                                        File::index(file as usize),
+                                        Rank::index(rank as usize),
+                                    );
+                                    link.send_message(Msg::ClickSquare(square));
+                                }
+                                None => {
+                                    info!("invalid data-square value '{data}'");
                                 }
                             }
-                            _ => info!("invalid data-square value '{data}'"),
+                        } else {
+                            info!("invalid data-square value '{data}'");
                         };
                     }
                 })
@@ -68,8 +67,8 @@ impl Component for Board {
             .flat_map(|rank| {
                 (0..8).map(move |file| {
                     html! {
-                        <div style={format!("background-color: {}; position: absolute; bottom: {}%; left: {}%; background-size: 100%; height: 12.5%; width: 12.5%;", if (file + rank) % 2 == 0 {"black"} else {"white"}, 12.5 * rank as f32, 12.5 * file as f32)}
-                        data-square={format!("{rank}{file}")}
+                        <div style={format!("background-color: {}; position: absolute; left: {}%; bottom: {}%; background-size: 100%; height: 12.5%; width: 12.5%;", if (file + rank) % 2 == 0 {"black"} else {"white"}, 12.5 * file as f32, 12.5 * rank as f32)}
+                        data-square={format!("{file}{rank}")}
                         onclick={click_square.clone()}/>
                     }
                 })
@@ -85,24 +84,23 @@ impl Component for Board {
                     let element: HtmlElement = e.target_unchecked_into();
                     if let Some(data) = element.get_attribute("data-square") {
                         let chars: Vec<_> = data.chars().collect();
-                        match chars[..] {
-                            [rank, file] => {
-                                let rank = rank.to_digit(10);
-                                let file = file.to_digit(10);
-                                match rank.zip(file) {
-                                    Some((rank, file)) => {
-                                        let square = Square::make_square(
-                                            Rank::from_index(rank as usize),
-                                            File::from_index(file as usize),
-                                        );
-                                        link.send_message(Msg::ClickPiece(square));
-                                    }
-                                    None => {
-                                        info!("invalid data-square value '{data}'");
-                                    }
+                        if let [file, rank] = chars[..] {
+                            let file = file.to_digit(10);
+                            let rank = rank.to_digit(10);
+                            match file.zip(rank) {
+                                Some((file, rank)) => {
+                                    let square = Square::new(
+                                        File::index(file as usize),
+                                        Rank::index(rank as usize),
+                                    );
+                                    link.send_message(Msg::ClickPiece(square));
+                                }
+                                None => {
+                                    info!("invalid data-square value '{data}'");
                                 }
                             }
-                            _ => info!("invalid data-square value '{data}'"),
+                        } else {
+                            info!("invalid data-square value '{data}'");
                         };
                     }
                 })
@@ -111,7 +109,7 @@ impl Component for Board {
             .flat_map(|rank| {
                 (0..8)
                     .map(move |file| {
-                        Square::make_square(Rank::from_index(rank), File::from_index(file))
+                        Square::new(File::index(file), Rank::index(rank))
                     })
                     .filter_map(|square| {
                         props
@@ -136,16 +134,18 @@ impl Component for Board {
                                 Piece::King => "k",
                             }
                         );
-                        let style = format!("background-image: url('{url}'); position: absolute; bottom: {}%; left: {}%; background-size: 100%; height: 12.5%; width: 12.5%; cursor: grab; {}",
-                            12.5 * square.get_rank().to_index() as f32,
-                            12.5 * square.get_file().to_index() as f32,
+                        let style = format!("background-image: url('{url}'); position: absolute; left: {}%; bottom: {}%; background-size: 100%; height: 12.5%; width: 12.5%; cursor: grab; {}",
+                            12.5 * square.file() as usize as f32,
+                            12.5 * square.rank() as usize as f32,
                             if self.selected_square == Some(square) {
                                 "background-color: rgba(255, 255, 0, 0.8)"
-                            } else {""},
+                            } else {
+                                ""
+                            },
                         );
                         html! {
                             <div style={style}
-                            data-square={format!("{}{}", square.get_rank().to_index(), square.get_file().to_index())}
+                            data-square={format!("{}{}", square.file() as usize, square.rank() as usize)}
                             onclick={click_piece.clone()}/>
                         }
                     })
@@ -154,17 +154,21 @@ impl Component for Board {
         };
 
         let moves: Option<Html> = self.selected_square.map(|selected_square| {
-            MoveGen::new_legal(&ctx.props().board)
-                .filter(|chess_move| chess_move.get_source() == selected_square)
-                .map(|chess_move| {
-                    let style = format!("position: absolute; bottom: {}%; left: {}%; height: 12.5%; width: 12.5%; background-color: #bbb; border-radius: 50%; pointer-events: none;",
-                        12.5 * chess_move.get_dest().get_rank().to_index() as f32, 
-                        12.5 * chess_move.get_dest().get_file().to_index() as f32);
+            let mut dest_squares = BitBoard::default();
+            ctx.props()
+                .board
+                .generate_moves_for(selected_square.bitboard(), |moves| {
+                    dest_squares |= moves.to;
+                    false
+                });
+            dest_squares.into_iter().map(|dest| {
+                let style = format!("position: absolute; left: {}%; bottom: {}%; height: 12.5%; width: 12.5%; background-color: #bbb; border-radius: 50%; pointer-events: none;",
+                        12.5 * dest.file() as usize as f32,
+                        12.5 * dest.rank() as usize as f32);
                     html! {
                         <div style={style}/>
                     }
-                })
-                .collect()
+            }).collect()
         });
 
         html! {
@@ -191,10 +195,14 @@ impl Component for Board {
                     false
                 }
             },
-            Msg::ClickSquare(square) => {
+            Msg::ClickSquare(clicked) => {
                 if let Some(selected) = self.selected_square.take() {
-                    let chess_move = ChessMove::new(selected, square, None);
-                    if ctx.props().board.legal(chess_move) {
+                    let chess_move = Move {
+                        from: selected,
+                        to: clicked,
+                        promotion: None,
+                    };
+                    if ctx.props().board.is_legal(chess_move) {
                         ctx.props().play_move.emit(chess_move);
                     }
                     true

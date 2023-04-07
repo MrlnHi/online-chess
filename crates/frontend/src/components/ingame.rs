@@ -5,13 +5,13 @@ use crate::Route;
 
 use super::board::Board;
 
-use chess::{Board as ChessBoard, ChessMove, Color};
 use common::ws::{ClientMsg, ServerMsg};
+use cozy_chess::{Board as ChessBoard, Color, Move};
 use futures::{
     channel::mpsc::{channel, Sender},
     SinkExt, StreamExt,
 };
-use log::info;
+use log::{info, warn};
 use reqwasm::websocket::futures::WebSocket;
 use uuid::Uuid;
 use wasm_bindgen_futures::spawn_local;
@@ -24,6 +24,7 @@ pub struct Props {
     pub session: Uuid,
 }
 
+#[derive(Debug, Clone)]
 pub struct Game {
     pub board: ChessBoard,
     pub color: Color,
@@ -95,10 +96,10 @@ impl Component for Ingame {
     }
 
     fn view(&self, _ctx: &yew::Context<Self>) -> Html {
-        if let Some(Game { board, color }) = self.game {
+        if let Some(Game { board, color }) = self.game.clone() {
             let play_move = {
                 let tx = self.tx.clone();
-                Callback::from(move |chess_move: ChessMove| {
+                Callback::from(move |chess_move: Move| {
                     let mut tx = tx.clone();
                     spawn_local(async move {
                         tx.send(ClientMsg::PlayMove(chess_move)).await.unwrap();
@@ -141,7 +142,9 @@ impl Component for Ingame {
                 }
                 ServerMsg::PlayedMove(chess_move) => {
                     if let Some(game) = &mut self.game {
-                        game.board = game.board.make_move_new(chess_move);
+                        if let Err(err) = game.board.try_play(chess_move) {
+                            warn!("tried to play invalid move {chess_move} ({err})");
+                        };
                         true
                     } else {
                         false

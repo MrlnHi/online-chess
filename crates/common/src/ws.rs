@@ -1,4 +1,4 @@
-use chess::{ChessMove, Color};
+use cozy_chess::{Color, Move};
 use proc_macros::Message;
 use uuid::Uuid;
 
@@ -11,12 +11,12 @@ pub enum ServerMsg {
     InvalidSession,
     InvalidLobby,
     OpponentJoined,
-    PlayedMove(ChessMove),
+    PlayedMove(Move),
     InvalidMove,
 }
 
 #[derive(Debug, Clone, PartialEq, Message)]
 pub enum ClientMsg {
     PlayRequest { lobby_id: Uuid, session: Uuid },
-    PlayMove(ChessMove),
+    PlayMove(Move),
 }

@@ -5,11 +5,11 @@ use axum::{
     routing::{self, get_service},
     Json, Router,
 };
-use chess::{Board, ChessMove, Color, Game};
 use common::{
     http::{HostResponse, JoinResponse},
     ws::{message::Message, ClientMsg, ServerMsg},
 };
+use cozy_chess::{Board, Color, Move};
 use futures::{
     channel::mpsc::{channel, Sender},
     lock::Mutex,
@@ -26,7 +26,7 @@ enum PlayerAction {
     PlayMove {
         lobby_id: Uuid,
         color: Color,
-        chess_move: ChessMove,
+        chess_move: Move,
     },
 }
 
@@ -61,7 +61,7 @@ struct Lobby {
 #[derive(Debug, Clone)]
 enum LobbyState {
     Waiting { session: Uuid, color: Color },
-    Playing { game: Game, sessions: Sessions },
+    Playing { board: Board, sessions: Sessions },
 }
 
 #[tokio::main]
@@ -87,13 +87,15 @@ async fn main() {
                     } => match lobbies.lock().await.get_mut(&lobby_id) {
                         Some(lobby) => {
                             match &mut lobby.state {
-                                LobbyState::Playing { game, .. } => {
-                                    if game.side_to_move() == color {
-                                        if game.make_move(chess_move) {
-                                            info!("client played move, broadcasting");
-                                            _ = lobby.tx.send(ServerMsg::PlayedMove(chess_move));
-                                        } else {
-                                            info!("client sent illegal move {chess_move}, ignoring");
+                                LobbyState::Playing { board, .. } => {
+                                    if board.side_to_move() == color {
+                                        match board.try_play(chess_move) {
+                                            Ok(()) => {
+                                                info!("client played move, broadcasting");
+                                                _ = lobby.tx.send(ServerMsg::PlayedMove(chess_move));},
+                                            Err(err) => {
+                                                info!("client sent illegal move {chess_move} ({err}), ignoring");
+                                            },
                                         }
                                     } else {
                                         info!("client sent move when it wasn't their turn, ignoring");
@@ -201,12 +203,12 @@ async fn websocket(mut socket: WebSocket, state: Arc<AppState>) {
                         return;
                     }
                 }
-                LobbyState::Playing { game, sessions } => {
+                LobbyState::Playing { board, sessions } => {
                     if let Some(color) = sessions.find(session) {
                         _ = socket
                             .send(
                                 ServerMsg::PlayResponse {
-                                    fen: game.current_position().to_string(),
+                                    fen: board.to_string(),
                                     color,
                                 }
                                 .to_axum_message()
@@ -342,7 +344,7 @@ async fn join_game(
                 };
                 _ = lobby.tx.send(ServerMsg::OpponentJoined);
                 lobby.state = LobbyState::Playing {
-                    game: Game::new(),
+                    board: Board::default(),
                     sessions,
                 };
                 Ok(Json(JoinResponse {

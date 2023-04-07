@@ -1,6 +1,5 @@
+use cozy_chess::{Color, Move, Piece, Square};
 use std::io::{self, ErrorKind, Read, Write};
-
-use chess::{ChessMove, Color, Piece, Square};
 use uuid::Uuid;
 
 #[cfg(feature = "reqwasm")]
@@ -64,26 +63,6 @@ impl Message for Uuid {
     }
 }
 
-impl Message for Square {
-    fn encode(&self, mut write: impl Write) -> io::Result<()> {
-        write.write_all(&[self.to_int()])?;
-        write.flush()
-    }
-
-    fn decode(mut read: impl Read) -> io::Result<Self> {
-        let mut buf = [0];
-        read.read_exact(&mut buf)?;
-        let [square] = buf;
-        if square as usize >= chess::NUM_SQUARES {
-            return Err(io::Error::new(
-                ErrorKind::InvalidData,
-                format!("invalid square ({} >= {})", square, chess::NUM_SQUARES),
-            ));
-        }
-        Ok(unsafe { Square::new(square) })
-    }
-}
-
 impl Message for u8 {
     fn encode(&self, mut write: impl Write) -> io::Result<()> {
         write.write_all(&[*self])?;
@@ -94,37 +73,6 @@ impl Message for u8 {
         let mut buf = [0];
         read.read_exact(&mut buf)?;
         Ok(buf[0])
-    }
-}
-
-impl Message for Piece {
-    fn encode(&self, mut write: impl Write) -> io::Result<()> {
-        let id = match self {
-            Piece::Pawn => 0u8,
-            Piece::Knight => 1u8,
-            Piece::Bishop => 2u8,
-            Piece::Rook => 3u8,
-            Piece::Queen => 4u8,
-            Piece::King => 5u8,
-        };
-        id.encode(&mut write)?;
-        write.flush()
-    }
-
-    fn decode(mut read: impl Read) -> io::Result<Self> {
-        let id = u8::decode(&mut read)?;
-        match id {
-            0 => Ok(Piece::Pawn),
-            1 => Ok(Piece::Knight),
-            2 => Ok(Piece::Bishop),
-            3 => Ok(Piece::Rook),
-            4 => Ok(Piece::Queen),
-            5 => Ok(Piece::King),
-            _ => Err(io::Error::new(
-                ErrorKind::InvalidData,
-                format!("piece id {id}"),
-            )),
-        }
     }
 }
 
@@ -155,43 +103,83 @@ impl<T: Message> Message for Option<T> {
     }
 }
 
-impl Message for ChessMove {
+impl Message for Square {
     fn encode(&self, mut write: impl Write) -> io::Result<()> {
-        self.get_source().encode(&mut write)?;
-        self.get_dest().encode(&mut write)?;
-        self.get_promotion().encode(&mut write)?;
-        write.flush()
-    }
-
-    fn decode(mut read: impl Read) -> io::Result<Self> {
-        let source = Square::decode(&mut read)?;
-        let dest = Square::decode(&mut read)?;
-        let promotion = Option::decode(&mut read)?;
-
-        Ok(ChessMove::new(source, dest, promotion))
-    }
-}
-
-impl Message for Color {
-    fn encode(&self, mut write: impl Write) -> io::Result<()> {
-        let id = match self {
-            Color::White => 0u8,
-            Color::Black => 1u8,
-        };
+        let id = *self as usize;
         id.encode(&mut write)?;
         write.flush()
     }
 
     fn decode(mut read: impl Read) -> io::Result<Self> {
-        let id = u8::decode(&mut read)?;
-        match id {
-            0 => Ok(Color::White),
-            1 => Ok(Color::Black),
-            _ => Err(io::Error::new(
+        let id = usize::decode(&mut read)?;
+        Square::try_index(id).ok_or_else(|| {
+            io::Error::new(
                 ErrorKind::InvalidData,
-                format!("color id {id}"),
-            )),
-        }
+                format!("square id ({} >= {})", id, Square::NUM),
+            )
+        })
+    }
+}
+
+impl Message for Piece {
+    fn encode(&self, mut write: impl Write) -> io::Result<()> {
+        let id = *self as usize;
+        id.encode(&mut write)?;
+        write.flush()
+    }
+
+    fn decode(mut read: impl Read) -> io::Result<Self> {
+        let id = usize::decode(&mut read)?;
+        Piece::try_index(id)
+            .ok_or_else(|| io::Error::new(ErrorKind::InvalidData, format!("piece id {id}")))
+    }
+}
+
+impl Message for Move {
+    fn encode(&self, mut write: impl Write) -> io::Result<()> {
+        self.from.encode(&mut write)?;
+        self.to.encode(&mut write)?;
+        self.promotion.encode(&mut write)?;
+        write.flush()
+    }
+
+    fn decode(mut read: impl Read) -> io::Result<Self> {
+        let from = Square::decode(&mut read)?;
+        let to = Square::decode(&mut read)?;
+        let promotion = Option::decode(&mut read)?;
+
+        Ok(Move {
+            from,
+            to,
+            promotion,
+        })
+    }
+}
+
+impl Message for Color {
+    fn encode(&self, mut write: impl Write) -> io::Result<()> {
+        let id = *self as usize;
+        id.encode(&mut write)?;
+        write.flush()
+    }
+
+    fn decode(mut read: impl Read) -> io::Result<Self> {
+        let id = usize::decode(&mut read)?;
+        Color::try_index(id)
+            .ok_or_else(|| io::Error::new(ErrorKind::InvalidData, format!("color id {id}")))
+    }
+}
+
+impl Message for usize {
+    fn encode(&self, mut write: impl Write) -> io::Result<()> {
+        let a = *self as u64;
+        a.encode(&mut write)?;
+        write.flush()
+    }
+
+    fn decode(mut read: impl Read) -> io::Result<Self> {
+        let a = u64::decode(&mut read)?;
+        Ok(a as usize)
     }
 }
 
@@ -217,7 +205,10 @@ impl Message for String {
     }
 
     fn decode(mut read: impl Read) -> io::Result<Self> {
-        let len = u64::decode(&mut read)? as usize;
+        let len = match usize::try_from(u64::decode(&mut read)?) {
+            Ok(val) => val,
+            Err(err) => return Err(io::Error::new(ErrorKind::InvalidData, err)),
+        };
         let mut buf = vec![0; len];
         read.read_exact(&mut buf[..])?;
         String::from_utf8(buf).map_err(|err| io::Error::new(ErrorKind::InvalidData, err))
