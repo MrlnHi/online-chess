@@ -7,7 +7,7 @@ use axum::{
 };
 use common::{
     http::{HostResponse, JoinResponse},
-    ws::{message::Message, ClientMsg, ServerMsg},
+    ws::{message::Message, ClientMsg, GameState, ServerMsg},
 };
 use cozy_chess::{Board, Color, Move};
 use futures::{
@@ -25,7 +25,7 @@ use uuid::Uuid;
 enum PlayerAction {
     PlayMove {
         lobby_id: Uuid,
-        color: Color,
+        session: Uuid,
         chess_move: Move,
     },
 }
@@ -60,7 +60,7 @@ struct Lobby {
 
 #[derive(Debug, Clone)]
 enum LobbyState {
-    Waiting { session: Uuid, color: Color },
+    Waiting { session: Uuid },
     Playing { board: Board, sessions: Sessions },
 }
 
@@ -82,17 +82,18 @@ async fn main() {
                 match action {
                     PlayerAction::PlayMove {
                         lobby_id,
-                        color,
+                        session,
                         chess_move,
                     } => match lobbies.lock().await.get_mut(&lobby_id) {
                         Some(lobby) => {
                             match &mut lobby.state {
-                                LobbyState::Playing { board, .. } => {
-                                    if board.side_to_move() == color {
+                                LobbyState::Playing { board, sessions } => {
+                                    if Some(board.side_to_move()) == sessions.find(session) {
                                         match board.try_play(chess_move) {
                                             Ok(()) => {
                                                 info!("client played move, broadcasting");
-                                                _ = lobby.tx.send(ServerMsg::PlayedMove(chess_move));},
+                                                _ = lobby.tx.send(ServerMsg::PlayedMove(chess_move));
+                                            },
                                             Err(err) => {
                                                 info!("client sent illegal move {chess_move} ({err}), ignoring");
                                             },
@@ -156,10 +157,10 @@ async fn websocket(mut socket: WebSocket, state: Arc<AppState>) {
                     }
                 };
                 match msg {
-                    ClientMsg::PlayRequest { lobby_id, session } => (lobby_id, session),
+                    ClientMsg::Connect { lobby_id, session } => (lobby_id, session),
                     _ => {
-                        let Ok(msg) = ServerMsg::PlayRequestRequired.to_axum_message() else {
-                            warn!("failed to convert message to axum message: {:?}", ServerMsg::PlayRequestRequired);
+                        let Ok(msg) = ServerMsg::ConnectRequired.to_axum_message() else {
+                            warn!("failed to convert message to axum message: {:?}", ServerMsg::ConnectRequired);
                             return;
                         };
                         _ = socket.send(msg).await;
@@ -177,25 +178,18 @@ async fn websocket(mut socket: WebSocket, state: Arc<AppState>) {
         return;
     };
 
-    let (tx, color) = match state.lobbies.lock().await.get(&lobby_id) {
+    let tx = match state.lobbies.lock().await.get(&lobby_id) {
         Some(Lobby { state, tx }) => {
-            let color = match state {
-                LobbyState::Waiting {
-                    session: sess,
-                    color,
-                } => {
+            match state {
+                LobbyState::Waiting { session: sess } => {
                     if *sess == session {
                         _ = socket
                             .send(
-                                ServerMsg::PlayResponse {
-                                    fen: Board::default().to_string(),
-                                    color: *color,
-                                }
-                                .to_axum_message()
-                                .unwrap(),
+                                ServerMsg::Connected(GameState::WaitingForOpponent)
+                                    .to_axum_message()
+                                    .unwrap(),
                             )
                             .await;
-                        *color
                     } else {
                         _ = socket
                             .send(ServerMsg::InvalidSession.to_axum_message().unwrap())
@@ -207,15 +201,14 @@ async fn websocket(mut socket: WebSocket, state: Arc<AppState>) {
                     if let Some(color) = sessions.find(session) {
                         _ = socket
                             .send(
-                                ServerMsg::PlayResponse {
+                                ServerMsg::Connected(GameState::Ingame {
                                     fen: board.to_string(),
                                     color,
-                                }
+                                })
                                 .to_axum_message()
                                 .unwrap(),
                             )
                             .await;
-                        color
                     } else {
                         _ = socket
                             .send(ServerMsg::InvalidSession.to_axum_message().unwrap())
@@ -223,8 +216,8 @@ async fn websocket(mut socket: WebSocket, state: Arc<AppState>) {
                         return;
                     }
                 }
-            };
-            (tx.clone(), color)
+            }
+            tx.clone()
         }
         None => {
             _ = socket
@@ -264,17 +257,17 @@ async fn websocket(mut socket: WebSocket, state: Arc<AppState>) {
                 let msg = ClientMsg::from_axum_message(msg);
                 match msg {
                     Ok(msg) => match msg {
-                        ClientMsg::PlayRequest { .. } => {
-                            info!("client sent PlayRequest while already in game, ignoring");
-                        }
                         ClientMsg::PlayMove(chess_move) => {
                             tx.send(PlayerAction::PlayMove {
                                 lobby_id,
-                                color,
+                                session,
                                 chess_move,
                             })
                             .await
                             .unwrap();
+                        }
+                        msg => {
+                            debug!("client sent {msg:?} while already in game, ignoring");
                         }
                     },
                     Err(err) => {
@@ -306,14 +299,7 @@ async fn host_game(State(state): State<Arc<AppState>>) -> Result<Json<HostRespon
         Lobby {
             // TODO: Increase capacity when introducing spectators
             tx: broadcast::channel(2).0,
-            state: LobbyState::Waiting {
-                session,
-                color: if rand::random() {
-                    Color::White
-                } else {
-                    Color::Black
-                },
-            },
+            state: LobbyState::Waiting { session },
         },
     );
 
@@ -329,9 +315,9 @@ async fn join_game(
 ) -> Result<Json<JoinResponse>, StatusCode> {
     match state.lobbies.lock().await.get_mut(&id) {
         Some(lobby) => match lobby.state {
-            LobbyState::Waiting { session, color } => {
+            LobbyState::Waiting { session } => {
                 let other = Uuid::new_v4();
-                let sessions = if color == Color::White {
+                let sessions = if rand::random() {
                     Sessions {
                         white: session,
                         black: other,

@@ -1,9 +1,10 @@
+use crate::components::{
+    host::Host, ingame::Ingame, join::Join, menu::Menu, waiting_for_opponent::WaitingForOpponent,
+};
 use common::http::{HostResponse, JoinResponse};
 use uuid::Uuid;
 use yew::prelude::*;
 use yew_router::prelude::*;
-
-use crate::components::{ingame::Ingame, menu::Menu};
 
 mod components;
 
@@ -11,6 +12,13 @@ mod components;
 enum Route {
     #[at("/")]
     Home,
+    #[at("/host")]
+    Host,
+    // TODO: Do not include session in url
+    #[at("/waiting-for-opponent/:id/:session")]
+    WaitingForOpponent { id: Uuid, session: Uuid },
+    #[at("/join/:id")]
+    Join { id: Uuid },
     // TODO: Do not include session in url
     #[at("/game/:id/:session")]
     Ingame { id: Uuid, session: Uuid },
@@ -46,6 +54,11 @@ impl From<JoinResponse> for Game {
 fn switch(route: Route) -> Html {
     match route {
         Route::Home => html! { <Menu /> },
+        Route::Host => html! { <Host /> },
+        Route::WaitingForOpponent { id, session } => {
+            html! { <WaitingForOpponent {id} {session} /> }
+        }
+        Route::Join { id } => html! { <Join {id} /> },
         Route::Ingame { id, session } => html! { <Ingame {id} {session} /> },
         Route::NotFound => html! { "Not Found." },
     }

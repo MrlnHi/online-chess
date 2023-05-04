@@ -1,7 +1,4 @@
-use common::ws::message::Message;
-use std::str::FromStr;
-
-use crate::Route;
+use common::ws::{message::Message, GameState};
 
 use super::board::Board;
 
@@ -16,7 +13,6 @@ use reqwasm::websocket::futures::WebSocket;
 use uuid::Uuid;
 use wasm_bindgen_futures::spawn_local;
 use yew::{html, Callback, Component, Html, Properties};
-use yew_router::scope_ext::RouterScopeExt;
 
 #[derive(Properties, PartialEq)]
 pub struct Props {
@@ -44,8 +40,8 @@ impl Component for Ingame {
     type Properties = Props;
 
     fn create(ctx: &yew::Context<Self>) -> Self {
-        // TODO: Use correct url
-        let ws = WebSocket::open("ws://127.0.0.1:3000/ws").unwrap();
+        let hostname = web_sys::window().unwrap().location().hostname().unwrap();
+        let ws = WebSocket::open(&format!("ws://{hostname}:3000/ws")).unwrap();
         let (mut send, mut receive) = ws.split();
 
         let (tx, mut rx) = channel::<ClientMsg>(0);
@@ -57,7 +53,7 @@ impl Component for Ingame {
             let link = ctx.link().clone();
             spawn_local(async move {
                 send.send(
-                    ClientMsg::PlayRequest {
+                    ClientMsg::Connect {
                         lobby_id: id,
                         session,
                     }
@@ -116,28 +112,14 @@ impl Component for Ingame {
         }
     }
 
-    fn update(&mut self, ctx: &yew::Context<Self>, msg: Self::Message) -> bool {
+    fn update(&mut self, _ctx: &yew::Context<Self>, msg: Self::Message) -> bool {
         match msg {
             Msg::ReceivedMsg(msg) => match msg {
-                ServerMsg::PlayResponse { fen, color } => {
+                ServerMsg::Connected(GameState::Ingame { fen, color }) => {
                     self.game.replace(Game {
-                        board: ChessBoard::from_str(&fen).unwrap(),
+                        board: fen.parse().unwrap(),
                         color,
                     });
-                    true
-                }
-                ServerMsg::InvalidSession => {
-                    info!("received invalid session, going back to home");
-                    ctx.link().navigator().unwrap().replace(&Route::Home);
-                    true
-                }
-                ServerMsg::InvalidLobby => {
-                    info!("received invalid lobby, going back to home");
-                    ctx.link().navigator().unwrap().replace(&Route::Home);
-                    true
-                }
-                ServerMsg::OpponentJoined => {
-                    info!("opponent joined");
                     true
                 }
                 ServerMsg::PlayedMove(chess_move) => {

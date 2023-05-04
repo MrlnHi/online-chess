@@ -17,7 +17,6 @@ pub struct Board {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Msg {
-    ClickPiece(Square),
     ClickSquare(Square),
 }
 
@@ -93,7 +92,7 @@ impl Component for Board {
                                         File::index(file as usize),
                                         Rank::index(rank as usize),
                                     );
-                                    link.send_message(Msg::ClickPiece(square));
+                                    link.send_message(Msg::ClickSquare(square));
                                 }
                                 None => {
                                     info!("invalid data-square value '{data}'");
@@ -185,18 +184,8 @@ impl Component for Board {
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
-            Msg::ClickPiece(square) => match ctx.props().board.color_on(square) {
-                Some(color) if color == ctx.props().color => {
-                    self.selected_square.replace(square);
-                    true
-                }
-                _ => {
-                    ctx.link().send_message(Msg::ClickSquare(square));
-                    false
-                }
-            },
             Msg::ClickSquare(clicked) => {
-                if let Some(selected) = self.selected_square.take() {
+                if let Some(selected) = self.selected_square {
                     let chess_move = Move {
                         from: selected,
                         to: clicked,
@@ -204,7 +193,11 @@ impl Component for Board {
                     };
                     if ctx.props().board.is_legal(chess_move) {
                         ctx.props().play_move.emit(chess_move);
+                        return true;
                     }
+                }
+                if ctx.props().board.piece_on(clicked).is_some() {
+                    self.selected_square.replace(clicked);
                     true
                 } else {
                     false

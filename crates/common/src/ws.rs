@@ -5,9 +5,15 @@ use uuid::Uuid;
 pub mod message;
 
 #[derive(Debug, Clone, PartialEq, Message)]
+pub enum GameState {
+    WaitingForOpponent,
+    Ingame { fen: String, color: Color },
+}
+
+#[derive(Debug, Clone, PartialEq, Message)]
 pub enum ServerMsg {
-    PlayRequestRequired,
-    PlayResponse { fen: String, color: Color },
+    ConnectRequired,
+    Connected(GameState),
     InvalidSession,
     InvalidLobby,
     OpponentJoined,
@@ -17,6 +23,14 @@ pub enum ServerMsg {
 
 #[derive(Debug, Clone, PartialEq, Message)]
 pub enum ClientMsg {
-    PlayRequest { lobby_id: Uuid, session: Uuid },
+    Connect {
+        lobby_id: Uuid,
+        session: Uuid,
+    },
+    /// Gets sent by the host after they received [`ServerMsg::OpponentJoined`]
+    PlayRequest {
+        lobby_id: Uuid,
+        session: Uuid,
+    },
     PlayMove(Move),
 }

@@ -1,7 +1,8 @@
-use common::http::HostResponse;
-use reqwasm::http::Request;
+use std::str::FromStr;
+
+use uuid::Uuid;
 use web_sys::HtmlInputElement;
-use yew::{platform::spawn_local, prelude::*};
+use yew::prelude::*;
 use yew_router::scope_ext::RouterScopeExt;
 
 use crate::Route;
@@ -27,62 +28,26 @@ impl Component for Menu {
 
     fn view(&self, ctx: &Context<Self>) -> Html {
         let host = {
-            let link = ctx.link().clone();
+            let navigator = ctx.link().navigator().unwrap();
             move |_| {
-                let link = link.clone();
-                spawn_local(async move {
-                    let response = match Request::post("/api/host").send().await {
-                        Ok(response) => response,
-                        Err(err) => {
-                            link.send_message(Msg::Error(err.to_string()));
-                            return;
-                        }
-                    };
-                    match response.status() {
-                        200 => {
-                            let response: HostResponse = response.json().await.unwrap();
-                            link.navigator().unwrap().push(&Route::Ingame {
-                                id: response.lobby_id,
-                                session: response.session,
-                            });
-                        }
-                        other => {
-                            link.send_message(Msg::Error(format!("Unhandled status code {other}")));
-                        }
-                    }
-                });
+                navigator.push(&Route::Host);
             }
         };
         let join = {
             let input_ref = self.input_ref.clone();
             let link = ctx.link().clone();
+            let navigator = link.navigator().unwrap();
             move |_| {
                 let input: HtmlInputElement = input_ref.cast().unwrap();
                 let input = input.value();
-                let link = link.clone();
-                spawn_local(async move {
-                    let response = match Request::post(&format!("/api/join/{input}")).send().await {
-                        Ok(response) => response,
-                        Err(err) => {
-                            link.send_message(Msg::Error(err.to_string()));
-                            return;
-                        }
-                    };
-                    match response.status() {
-                        200 => {
-                            let response: HostResponse = response.json().await.unwrap();
-                            link.navigator().unwrap().push(&Route::Ingame {
-                                id: response.lobby_id,
-                                session: response.session,
-                            });
-                        }
-                        404 => link.send_message(Msg::Error("Unknown lobby".to_string())),
-                        409 => link.send_message(Msg::Error("Game is already running".to_string())),
-                        other => {
-                            link.send_message(Msg::Error(format!("Unhandled status code {other}")));
-                        }
+                let id = match Uuid::from_str(&input) {
+                    Ok(id) => id,
+                    Err(err) => {
+                        link.send_message(Msg::Error(format!("Invalid lobby id '{input}': {err}")));
+                        return;
                     }
-                });
+                };
+                navigator.push(&Route::Join { id });
             }
         };
 

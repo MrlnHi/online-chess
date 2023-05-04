@@ -1,7 +1,7 @@
 [[proxy]]
-backend = "http://127.0.0.1:3000/api/"
+backend = "http://localhost:3000/api/"
 
-# Does not work as of now
+# Does not work, thus there's a workaround in the code
 [[proxy]]
-backend = "ws://127.0.0.1:3000/ws/"
+backend = "ws://localhost:3000/ws/"
 ws = true
