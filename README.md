@@ -10,7 +10,7 @@ cargo r -p backend
 
 ### Launch frontend
 ```
-cd /crates/frontend
+cd crates/frontend
 trunk serve
 ```
 you can optionally include the `--open` switch for `trunk serve`, which will automatically open the frontend in your browser
